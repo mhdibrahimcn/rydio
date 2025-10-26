@@ -20,16 +20,22 @@ class ApiKeys {
   // Uber API
   static String get uberClientId => _read('UBER_CLIENT_ID');
 
-  static String get uberServerToken => _read('UBER_SERVER_TOKEN');
-
   static String get uberClientSecret => _read('UBER_CLIENT_SECRET');
 
   static String get uberRedirectUri => _read('UBER_REDIRECT_URI');
 
-  static List<String> get uberDriverScopes {
-    final raw = _read('UBER_DRIVER_SCOPES');
+  static Uri? get uberRedirectUriParsed {
+    final raw = uberRedirectUri.trim();
+    if (raw.isEmpty) return null;
+    return Uri.tryParse(raw);
+  }
+
+  static String get uberRedirectScheme => uberRedirectUriParsed?.scheme ?? '';
+
+  static List<String> get uberScopes {
+    final raw = _read('UBER_SCOPES');
     if (raw.trim().isEmpty) {
-      return const ['partner.accounts', 'partner.trips', 'partner.payments'];
+      return const ['profile', 'rides.read', 'rides.request', 'rides.estimate'];
     }
 
     final scopes =
@@ -62,10 +68,7 @@ class ApiKeys {
 
   static bool get hasGoogleKeys => hasGooglePlacesKey && hasGoogleMapsKey;
 
-  static bool get hasUberKeys =>
-      uberClientId.isNotEmpty && uberServerToken.isNotEmpty;
-
-  static bool get hasUberDriverOAuthConfig =>
+  static bool get hasUberOAuthConfig =>
       uberClientId.isNotEmpty &&
       uberClientSecret.isNotEmpty &&
       uberRedirectUri.isNotEmpty;

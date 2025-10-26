@@ -1,16 +1,35 @@
-# rydio
+# Rydio
 
-A new Flutter project.
+Rydio compares real-time ride fares from mobility providers. The app now
+integrates with Uber's OAuth flow so users can authenticate and fetch live
+price estimates directly from Uber's APIs.
 
-## Getting Started
+## Uber OAuth Setup
 
-This project is a starting point for a Flutter application.
+1. Create an Uber developer application and enable the sandbox environment
+	while testing.
+2. Configure a redirect URI that uses a custom scheme (e.g.
+	`rydio://oauth/uber`). Add the same scheme and host
+	to the Android and iOS platform projects so the OAuth callback returns
+	to the app.
+3. Add the following keys to `.env` (or your secure secrets store):
 
-A few resources to get you started if this is your first Flutter project:
+	```env
+	UBER_CLIENT_ID=your_client_id
+	UBER_CLIENT_SECRET=your_client_secret
+	UBER_REDIRECT_URI=rydio://oauth/uber
+	UBER_SCOPES=profile rides.read rides.request rides.estimate
+	UBER_USE_SANDBOX=true
+	```
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+4. Run `flutter pub get` to install dependencies (`flutter_web_auth_2` is used
+	for the OAuth browser session).
+5. In the app, tap **Connect Uber** and complete the login flow. Once
+	authorized, you can compare live Uber fares for the selected route.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Running the App
+
+```bash
+flutter pub get
+flutter run
+```

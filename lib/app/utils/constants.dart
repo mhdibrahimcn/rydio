@@ -5,11 +5,8 @@ class AppConstants {
 
   // API Endpoints
   static const String uberBaseUrl = 'https://api.uber.com/v1.2';
-  static const String uberDriverBaseUrl = 'https://api.uber.com/v1';
   static const String uberAuthBaseUrl = 'https://auth.uber.com/oauth/v2';
   static const String uberSandboxBaseUrl = 'https://sandbox-api.uber.com/v1.2';
-  static const String uberSandboxDriverBaseUrl =
-      'https://sandbox-api.uber.com/v1';
   static const String uberSandboxAuthBaseUrl =
       'https://sandbox-login.uber.com/oauth/v2';
   static const String olaBaseUrl = 'https://devapi.olacabs.com/v1';

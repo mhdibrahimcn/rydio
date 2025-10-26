@@ -4,6 +4,7 @@ import '../models/fare_model.dart';
 import '../models/ride_option.dart';
 import '../services/uber_service.dart';
 import 'location_controller.dart';
+import 'uber_auth_controller.dart';
 
 class FareController extends GetxController {
   // Reactive variables
@@ -15,11 +16,13 @@ class FareController extends GetxController {
 
   // Location controller reference
   late final LocationController locationController;
+  late final UberAuthController uberAuthController;
 
   @override
   void onInit() {
     super.onInit();
     locationController = Get.find<LocationController>();
+    uberAuthController = Get.find<UberAuthController>();
   }
 
   // Fetch fares from all services
@@ -38,6 +41,16 @@ class FareController extends GetxController {
     fares.clear();
 
     try {
+      final accessToken = await uberAuthController.ensureAccessToken();
+      if (accessToken == null) {
+        Get.snackbar(
+          'Uber Sign-In Required',
+          'Please connect your Uber account before fetching live fares.',
+          snackPosition: SnackPosition.BOTTOM,
+        );
+        return;
+      }
+
       final pickupCoords = locationController.getPickupCoordinates();
       final dropCoords = locationController.getDropCoordinates();
 
@@ -52,6 +65,7 @@ class FareController extends GetxController {
           fromLng: pickupCoords['lng']!,
           toLat: dropCoords['lat']!,
           toLng: dropCoords['lng']!,
+          accessToken: accessToken,
         ),
       );
 

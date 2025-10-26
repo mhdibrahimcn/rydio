@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' show log;
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
@@ -19,30 +20,6 @@ class PlacesService {
 
   // Rate limiting: ensure at least ~1s between requests
   static DateTime? _lastRequestTime;
-
-  static final List<LocationModel> _fallbackLocations = [
-    LocationModel(
-      name: 'Bangalore City',
-      address: 'Bengaluru, Karnataka, India',
-      latitude: 12.9716,
-      longitude: 77.5946,
-      placeId: 'fallback-bengaluru',
-    ),
-    LocationModel(
-      name: 'Mumbai',
-      address: 'Mumbai, Maharashtra, India',
-      latitude: 19.0760,
-      longitude: 72.8777,
-      placeId: 'fallback-mumbai',
-    ),
-    LocationModel(
-      name: 'Hyderabad',
-      address: 'Hyderabad, Telangana, India',
-      latitude: 17.3850,
-      longitude: 78.4867,
-      placeId: 'fallback-hyderabad',
-    ),
-  ];
 
   // Search for places using Nominatim
   static Future<List<LocationModel>> searchPlaces(String query) async {
@@ -67,11 +44,18 @@ class PlacesService {
     );
 
     try {
+      log('PlacesService: GET $uri', name: 'PlacesService.searchPlaces');
       final response = await http.get(uri, headers: _defaultHeaders);
       _lastRequestTime = DateTime.now();
 
+      log(
+        'PlacesService: Response ${response.statusCode} ${response.body}',
+        name: 'PlacesService.searchPlaces',
+      );
       if (response.statusCode != 200) {
-        return _getMockPlaces(trimmedQuery);
+        throw PlacesServiceException(
+          'Nominatim returned status ${response.statusCode}',
+        );
       }
 
       final data = json.decode(response.body) as List<dynamic>;
@@ -96,7 +80,12 @@ class PlacesService {
 
       return results;
     } catch (e) {
-      return _getMockPlaces(trimmedQuery);
+      log(
+        'PlacesService: Error fetching places for "$trimmedQuery" -> $e',
+        name: 'PlacesService.searchPlaces',
+      );
+      if (e is PlacesServiceException) rethrow;
+      throw PlacesServiceException('Failed to search places', e);
     }
   }
 
@@ -114,10 +103,19 @@ class PlacesService {
     ).replace(queryParameters: {'place_id': placeId, 'format': 'json'});
 
     try {
+      log('PlacesService: GET $uri', name: 'PlacesService.getPlaceDetails');
       final response = await http.get(uri, headers: _defaultHeaders);
       _lastRequestTime = DateTime.now();
 
-      if (response.statusCode != 200) return _getMockPlaceDetails(placeId);
+      log(
+        'PlacesService: Response ${response.statusCode} ${response.body}',
+        name: 'PlacesService.getPlaceDetails',
+      );
+      if (response.statusCode != 200) {
+        throw PlacesServiceException(
+          'Nominatim returned status ${response.statusCode}',
+        );
+      }
 
       final data = json.decode(response.body) as Map<String, dynamic>;
       final lat = double.tryParse(data['lat']?.toString() ?? '0') ?? 0.0;
@@ -134,7 +132,12 @@ class PlacesService {
         placeId: data['place_id']?.toString(),
       );
     } catch (e) {
-      return _getMockPlaceDetails(placeId);
+      log(
+        'PlacesService: Error fetching place details for "$placeId" -> $e',
+        name: 'PlacesService.getPlaceDetails',
+      );
+      if (e is PlacesServiceException) rethrow;
+      throw PlacesServiceException('Failed to fetch place details', e);
     }
   }
 
@@ -198,26 +201,6 @@ class PlacesService {
     }
   }
 
-  static List<LocationModel> _getMockPlaces(String query) {
-    final lowerQuery = query.toLowerCase();
-    return _fallbackLocations
-        .where(
-          (location) =>
-              location.name.toLowerCase().contains(lowerQuery) ||
-              location.address.toLowerCase().contains(lowerQuery),
-        )
-        .toList();
-  }
-
-  static LocationModel? _getMockPlaceDetails(String placeId) {
-    for (final location in _fallbackLocations) {
-      if (location.placeId == placeId) {
-        return location;
-      }
-    }
-    return _fallbackLocations.isNotEmpty ? _fallbackLocations.first : null;
-  }
-
   static String _formatAddress(Placemark placemark) {
     final parts = <String>[];
 
@@ -246,4 +229,14 @@ class LocationPermissionException implements Exception {
 
   @override
   String toString() => message;
+}
+
+class PlacesServiceException implements Exception {
+  PlacesServiceException(this.message, [this.cause]);
+
+  final String message;
+  final Object? cause;
+
+  @override
+  String toString() => cause != null ? '$message (cause: $cause)' : message;
 }

@@ -1,3 +1,4 @@
+import 'dart:developer' show log;
 import 'dart:math' as math;
 
 import '../utils/api_keys.dart';
@@ -14,7 +15,9 @@ class MapService {
     int height = 200,
   }) {
     if (!ApiKeys.hasGoogleMapsKey) {
-      return _getMockMapUrl();
+      const message = 'Google Maps Static API key is not configured.';
+      log(message, name: 'MapService.getStaticMapUrl');
+      throw MapServiceException(message);
     }
 
     final baseUrl = '${AppConstants.googleMapsUrl}/staticmap';
@@ -58,12 +61,17 @@ class MapService {
     return (distance / averageSpeed * 60).round(); // minutes
   }
 
-  static String _getMockMapUrl() {
-    // Return a placeholder image URL for mock data
-    return 'https://via.placeholder.com/400x200/1B263B/00D9FF?text=Map+Preview';
-  }
-
   static double _degreesToRadians(double degrees) {
     return degrees * (math.pi / 180);
   }
+}
+
+class MapServiceException implements Exception {
+  MapServiceException(this.message, [this.cause]);
+
+  final String message;
+  final Object? cause;
+
+  @override
+  String toString() => cause != null ? '$message (cause: $cause)' : message;
 }

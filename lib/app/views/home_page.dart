@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import '../controllers/location_controller.dart';
 import '../controllers/fare_controller.dart';
 import '../controllers/ui_controller.dart';
+import '../controllers/uber_auth_controller.dart';
 import '../utils/app_colors.dart';
 import '../utils/app_text_styles.dart';
 import '../utils/constants.dart';
@@ -16,6 +17,7 @@ class HomePage extends StatelessWidget {
     final locationController = Get.find<LocationController>();
     final fareController = Get.find<FareController>();
     final uiController = Get.find<UIController>();
+    final uberAuthController = Get.find<UberAuthController>();
 
     return Scaffold(
       body: Container(
@@ -40,6 +42,11 @@ class HomePage extends StatelessWidget {
                       _buildLocationInputs(locationController, uiController),
 
                       const SizedBox(height: 32),
+
+                      // Uber Auth Card
+                      _buildUberAuthCard(uberAuthController),
+
+                      const SizedBox(height: 24),
 
                       // Compare Fares Button
                       _buildCompareButton(locationController, fareController),
@@ -315,5 +322,99 @@ class HomePage extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Widget _buildUberAuthCard(UberAuthController controller) {
+    return Obx(() {
+      final isConnected = controller.isAuthenticated;
+      final isLoading = controller.isAuthorizing.value;
+      final error = controller.errorMessage.value;
+
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: AppColors.cardGradient,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.glassBorder),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  isConnected ? Icons.verified : Icons.link,
+                  color:
+                      isConnected
+                          ? AppColors.accentGreen
+                          : AppColors.accentCyan,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    isConnected
+                        ? 'Uber account connected'
+                        : 'Connect your Uber account to fetch live fares',
+                    style: AppTextStyles.bodyLarge,
+                  ),
+                ),
+              ],
+            ),
+            if (error.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                error,
+                style: AppTextStyles.bodySmall.copyWith(color: AppColors.error),
+              ),
+            ],
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed:
+                        isLoading
+                            ? null
+                            : () {
+                              controller.startAuthorization();
+                            },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.accentCyan,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child:
+                        isLoading
+                            ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
+                              ),
+                            )
+                            : Text(
+                              isConnected ? 'Reconnect Uber' : 'Connect Uber',
+                            ),
+                  ),
+                ),
+                if (isConnected) ...[
+                  const SizedBox(width: 12),
+                  TextButton(
+                    onPressed: controller.clearSession,
+                    child: const Text('Disconnect'),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      );
+    });
   }
 }

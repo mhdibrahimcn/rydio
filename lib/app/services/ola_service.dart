@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:math';
+import 'dart:developer' show log;
 import 'package:http/http.dart' as http;
 import '../models/fare_model.dart';
 import '../utils/api_keys.dart';
@@ -8,22 +8,24 @@ import '../utils/constants.dart';
 class OlaService {
   static const String _baseUrl = AppConstants.olaBaseUrl;
 
-  // Mock implementation - replace with real API calls when keys are available
   static Future<List<FareModel>> getCabEstimates({
     required double pickupLat,
     required double pickupLng,
     required double dropLat,
     required double dropLng,
   }) async {
-    // Simulate API delay
-    await Future.delayed(const Duration(milliseconds: 700));
-
-    // Mock data - replace with real API call
-    if (ApiKeys.hasOlaKey) {
-      return await _getRealEstimates(pickupLat, pickupLng, dropLat, dropLng);
-    } else {
-      return _getMockEstimates(pickupLat, pickupLng, dropLat, dropLng);
+    if (!ApiKeys.hasOlaKey) {
+      const message = 'Ola API credentials are not configured.';
+      log(message, name: 'OlaService.getCabEstimates');
+      throw OlaServiceException(message);
     }
+
+    log(
+      'OlaService: Requesting cab estimates from ($pickupLat, $pickupLng) to ($dropLat, $dropLng)',
+      name: 'OlaService.getCabEstimates',
+    );
+
+    return _getRealEstimates(pickupLat, pickupLng, dropLat, dropLng);
   }
 
   static Future<List<FareModel>> _getRealEstimates(
@@ -42,6 +44,10 @@ class OlaService {
         'drop_lng': dropLng,
       };
 
+      log(
+        'OlaService: POST $url body=$body',
+        name: 'OlaService._getRealEstimates',
+      );
       final response = await http.post(
         url,
         headers: {
@@ -51,74 +57,24 @@ class OlaService {
         body: json.encode(body),
       );
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return _parseOlaResponse(data);
-      } else {
-        throw Exception('Ola API error: ${response.statusCode}');
+      log(
+        'OlaService: Response ${response.statusCode} ${response.body}',
+        name: 'OlaService._getRealEstimates',
+      );
+      if (response.statusCode != 200) {
+        throw OlaServiceException('Ola API error: ${response.statusCode}');
       }
+
+      final data = json.decode(response.body);
+      return _parseOlaResponse(data);
     } catch (e) {
-      // Fallback to mock data on error
-      return _getMockEstimates(pickupLat, pickupLng, dropLat, dropLng);
+      log(
+        'OlaService: Error fetching Ola estimates -> $e',
+        name: 'OlaService._getRealEstimates',
+      );
+      if (e is OlaServiceException) rethrow;
+      throw OlaServiceException('Failed to fetch Ola estimates', e);
     }
-  }
-
-  static List<FareModel> _getMockEstimates(
-    double pickupLat,
-    double pickupLng,
-    double dropLat,
-    double dropLng,
-  ) {
-    final random = Random();
-    final basePrice = _calculateBasePrice(
-      pickupLat,
-      pickupLng,
-      dropLat,
-      dropLng,
-    );
-
-    return [
-      FareModel(
-        serviceName: ServiceName.ola,
-        cabType: 'Ola Mini',
-        category: CabType.cab,
-        price: basePrice + random.nextInt(40),
-        eta: 4 + random.nextInt(8),
-        seats: 4,
-        deepLinkUrl:
-            'oladriver://booking?pickup_lat=$pickupLat&pickup_lng=$pickupLng&drop_lat=$dropLat&drop_lng=$dropLng',
-      ),
-      FareModel(
-        serviceName: ServiceName.ola,
-        cabType: 'Ola Micro',
-        category: CabType.cab,
-        price: basePrice + 20 + random.nextInt(30),
-        eta: 5 + random.nextInt(7),
-        seats: 4,
-        deepLinkUrl:
-            'oladriver://booking?pickup_lat=$pickupLat&pickup_lng=$pickupLng&drop_lat=$dropLat&drop_lng=$dropLng',
-      ),
-      FareModel(
-        serviceName: ServiceName.ola,
-        cabType: 'Ola Prime Sedan',
-        category: CabType.cab,
-        price: basePrice + 50 + random.nextInt(40),
-        eta: 6 + random.nextInt(9),
-        seats: 4,
-        deepLinkUrl:
-            'oladriver://booking?pickup_lat=$pickupLat&pickup_lng=$pickupLng&drop_lat=$dropLat&drop_lng=$dropLng',
-      ),
-      FareModel(
-        serviceName: ServiceName.ola,
-        cabType: 'Ola Auto',
-        category: CabType.auto,
-        price: basePrice - 15 + random.nextInt(25),
-        eta: 3 + random.nextInt(6),
-        seats: 3,
-        deepLinkUrl:
-            'oladriver://booking?pickup_lat=$pickupLat&pickup_lng=$pickupLng&drop_lat=$dropLat&drop_lng=$dropLng',
-      ),
-    ];
   }
 
   static List<FareModel> _parseOlaResponse(Map<String, dynamic> data) {
@@ -126,20 +82,14 @@ class OlaService {
 
     if (data['ride_estimates'] != null) {
       for (var estimate in data['ride_estimates']) {
-        fares.add(
-          FareModel(
-            serviceName: ServiceName.ola,
-            cabType: estimate['category_name'] ?? 'Ola',
-            category: _getCategoryFromOlaType(estimate['category']),
-            price: (estimate['amount'] ?? 0).toDouble(),
-            eta: estimate['eta'] ?? 0,
-            seats: _getSeatsFromOlaType(estimate['category']),
-            deepLinkUrl:
-                estimate['booking_id'] != null
-                    ? 'oladriver://booking?id=${estimate['booking_id']}'
-                    : null,
-          ),
-        );
+        if (estimate is! Map<String, dynamic>) {
+          continue;
+        }
+
+        final fare = _mapEstimateToFare(estimate);
+        if (fare != null) {
+          fares.add(fare);
+        }
       }
     }
 
@@ -162,39 +112,54 @@ class OlaService {
     return 4;
   }
 
-  static double _calculateBasePrice(
-    double pickupLat,
-    double pickupLng,
-    double dropLat,
-    double dropLng,
-  ) {
-    // Simple distance calculation for mock pricing
-    final distance = _calculateDistance(pickupLat, pickupLng, dropLat, dropLng);
-    return distance * 2.2; // ₹2.2 per km base rate
+  static FareModel? _mapEstimateToFare(Map<String, dynamic> estimate) {
+    final amount = _toDouble(estimate['amount'] ?? estimate['fare_estimate']);
+
+    if (amount == null) {
+      log(
+        'OlaService: Skipping estimate without usable fare: $estimate',
+        name: 'OlaService._mapEstimateToFare',
+      );
+      return null;
+    }
+
+    final cabType = estimate['category_name'] ?? estimate['category'] ?? 'Ola';
+    final eta = _secondsToMinutes(estimate['eta']);
+    final category = _getCategoryFromOlaType(estimate['category']?.toString());
+    final seats = _getSeatsFromOlaType(estimate['category']?.toString());
+
+    return FareModel(
+      serviceName: ServiceName.ola,
+      cabType: cabType.toString(),
+      category: category,
+      price: amount,
+      eta: eta,
+      seats: seats,
+      deepLinkUrl: estimate['booking_url']?.toString(),
+    );
   }
 
-  static double _calculateDistance(
-    double lat1,
-    double lng1,
-    double lat2,
-    double lng2,
-  ) {
-    const double earthRadius = 6371; // km
-    final double dLat = _degreesToRadians(lat2 - lat1);
-    final double dLng = _degreesToRadians(lng2 - lng1);
-
-    final double a =
-        sin(dLat / 2) * sin(dLat / 2) +
-        cos(_degreesToRadians(lat1)) *
-            cos(_degreesToRadians(lat2)) *
-            sin(dLng / 2) *
-            sin(dLng / 2);
-
-    final double c = 2 * atan2(sqrt(a), sqrt(1 - a));
-    return earthRadius * c;
+  static int _secondsToMinutes(dynamic value) {
+    final seconds = _toDouble(value);
+    if (seconds == null) return 0;
+    return (seconds / 60).ceil();
   }
 
-  static double _degreesToRadians(double degrees) {
-    return degrees * (pi / 180);
+  static double? _toDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) {
+      return double.tryParse(value.replaceAll(',', ''));
+    }
+    return null;
   }
+}
+
+class OlaServiceException implements Exception {
+  OlaServiceException(this.message, [this.cause]);
+
+  final String message;
+  final Object? cause;
+
+  @override
+  String toString() => cause != null ? '$message (cause: $cause)' : message;
 }

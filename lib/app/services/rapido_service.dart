@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:math';
+import 'dart:developer' show log;
 import 'package:http/http.dart' as http;
 import '../models/fare_model.dart';
 import '../utils/api_keys.dart';
@@ -8,22 +8,24 @@ import '../utils/constants.dart';
 class RapidoService {
   static const String _baseUrl = AppConstants.rapidoBaseUrl;
 
-  // Mock implementation - replace with real API calls when keys are available
   static Future<List<FareModel>> getBikeEstimates({
     required double sourceLat,
     required double sourceLng,
     required double destLat,
     required double destLng,
   }) async {
-    // Simulate API delay
-    await Future.delayed(const Duration(milliseconds: 600));
-
-    // Mock data - replace with real API call
-    if (ApiKeys.hasRapidoKey) {
-      return await _getRealEstimates(sourceLat, sourceLng, destLat, destLng);
-    } else {
-      return _getMockEstimates(sourceLat, sourceLng, destLat, destLng);
+    if (!ApiKeys.hasRapidoKey) {
+      const message = 'Rapido API credentials are not configured.';
+      log(message, name: 'RapidoService.getBikeEstimates');
+      throw RapidoServiceException(message);
     }
+
+    log(
+      'RapidoService: Requesting ride estimates from ($sourceLat, $sourceLng) to ($destLat, $destLng)',
+      name: 'RapidoService.getBikeEstimates',
+    );
+
+    return _getRealEstimates(sourceLat, sourceLng, destLat, destLng);
   }
 
   static Future<List<FareModel>> _getRealEstimates(
@@ -42,6 +44,10 @@ class RapidoService {
         'dest_lng': destLng,
       };
 
+      log(
+        'RapidoService: POST $url body=$body',
+        name: 'RapidoService._getRealEstimates',
+      );
       final response = await http.post(
         url,
         headers: {
@@ -51,74 +57,26 @@ class RapidoService {
         body: json.encode(body),
       );
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return _parseRapidoResponse(data);
-      } else {
-        throw Exception('Rapido API error: ${response.statusCode}');
+      log(
+        'RapidoService: Response ${response.statusCode} ${response.body}',
+        name: 'RapidoService._getRealEstimates',
+      );
+      if (response.statusCode != 200) {
+        throw RapidoServiceException(
+          'Rapido API error: ${response.statusCode}',
+        );
       }
+
+      final data = json.decode(response.body);
+      return _parseRapidoResponse(data);
     } catch (e) {
-      // Fallback to mock data on error
-      return _getMockEstimates(sourceLat, sourceLng, destLat, destLng);
+      log(
+        'RapidoService: Error fetching Rapido estimates -> $e',
+        name: 'RapidoService._getRealEstimates',
+      );
+      if (e is RapidoServiceException) rethrow;
+      throw RapidoServiceException('Failed to fetch Rapido estimates', e);
     }
-  }
-
-  static List<FareModel> _getMockEstimates(
-    double sourceLat,
-    double sourceLng,
-    double destLat,
-    double destLng,
-  ) {
-    final random = Random();
-    final basePrice = _calculateBasePrice(
-      sourceLat,
-      sourceLng,
-      destLat,
-      destLng,
-    );
-
-    return [
-      FareModel(
-        serviceName: ServiceName.rapido,
-        cabType: 'Rapido Bike',
-        category: CabType.bike,
-        price: basePrice - 30 + random.nextInt(20),
-        eta: 3 + random.nextInt(5),
-        seats: 1,
-        deepLinkUrl:
-            'rapido://booking?source_lat=$sourceLat&source_lng=$sourceLng&dest_lat=$destLat&dest_lng=$destLng',
-      ),
-      FareModel(
-        serviceName: ServiceName.rapido,
-        cabType: 'Rapido Auto',
-        category: CabType.auto,
-        price: basePrice - 10 + random.nextInt(25),
-        eta: 4 + random.nextInt(6),
-        seats: 3,
-        deepLinkUrl:
-            'rapido://booking?source_lat=$sourceLat&source_lng=$sourceLng&dest_lat=$destLat&dest_lng=$destLng',
-      ),
-      FareModel(
-        serviceName: ServiceName.rapido,
-        cabType: 'Rapido Cab Non AC',
-        category: CabType.cab,
-        price: basePrice + 10 + random.nextInt(30),
-        eta: 5 + random.nextInt(8),
-        seats: 4,
-        deepLinkUrl:
-            'rapido://booking?source_lat=$sourceLat&source_lng=$sourceLng&dest_lat=$destLat&dest_lng=$destLng',
-      ),
-      FareModel(
-        serviceName: ServiceName.rapido,
-        cabType: 'Rapido Cab AC',
-        category: CabType.cab,
-        price: basePrice + 25 + random.nextInt(35),
-        eta: 6 + random.nextInt(9),
-        seats: 4,
-        deepLinkUrl:
-            'rapido://booking?source_lat=$sourceLat&source_lng=$sourceLng&dest_lat=$destLat&dest_lng=$destLng',
-      ),
-    ];
   }
 
   static List<FareModel> _parseRapidoResponse(Map<String, dynamic> data) {
@@ -126,20 +84,14 @@ class RapidoService {
 
     if (data['estimates'] != null) {
       for (var estimate in data['estimates']) {
-        fares.add(
-          FareModel(
-            serviceName: ServiceName.rapido,
-            cabType: estimate['vehicle_type'] ?? 'Rapido',
-            category: _getCategoryFromRapidoType(estimate['vehicle_type']),
-            price: (estimate['fare'] ?? 0).toDouble(),
-            eta: estimate['eta'] ?? 0,
-            seats: _getSeatsFromRapidoType(estimate['vehicle_type']),
-            deepLinkUrl:
-                estimate['booking_id'] != null
-                    ? 'rapido://booking?id=${estimate['booking_id']}'
-                    : null,
-          ),
-        );
+        if (estimate is! Map<String, dynamic>) {
+          continue;
+        }
+
+        final fare = _mapEstimateToFare(estimate);
+        if (fare != null) {
+          fares.add(fare);
+        }
       }
     }
 
@@ -164,39 +116,54 @@ class RapidoService {
     return 1;
   }
 
-  static double _calculateBasePrice(
-    double sourceLat,
-    double sourceLng,
-    double destLat,
-    double destLng,
-  ) {
-    // Simple distance calculation for mock pricing
-    final distance = _calculateDistance(sourceLat, sourceLng, destLat, destLng);
-    return distance * 1.8; // ₹1.8 per km base rate (cheaper than others)
+  static FareModel? _mapEstimateToFare(Map<String, dynamic> estimate) {
+    final fare = _toDouble(estimate['fare'] ?? estimate['total_amount']);
+
+    if (fare == null) {
+      log(
+        'RapidoService: Skipping estimate without usable fare: $estimate',
+        name: 'RapidoService._mapEstimateToFare',
+      );
+      return null;
+    }
+
+    final cabType = estimate['vehicle_type']?.toString() ?? 'Rapido';
+    final category = _getCategoryFromRapidoType(estimate['vehicle_type']);
+    final seats = _getSeatsFromRapidoType(estimate['vehicle_type']);
+    final eta = _secondsToMinutes(estimate['eta']);
+
+    return FareModel(
+      serviceName: ServiceName.rapido,
+      cabType: cabType,
+      category: category,
+      price: fare,
+      eta: eta,
+      seats: seats,
+      deepLinkUrl: estimate['deep_link']?.toString(),
+    );
   }
 
-  static double _calculateDistance(
-    double lat1,
-    double lng1,
-    double lat2,
-    double lng2,
-  ) {
-    const double earthRadius = 6371; // km
-    final double dLat = _degreesToRadians(lat2 - lat1);
-    final double dLng = _degreesToRadians(lng2 - lng1);
-
-    final double a =
-        sin(dLat / 2) * sin(dLat / 2) +
-        cos(_degreesToRadians(lat1)) *
-            cos(_degreesToRadians(lat2)) *
-            sin(dLng / 2) *
-            sin(dLng / 2);
-
-    final double c = 2 * atan2(sqrt(a), sqrt(1 - a));
-    return earthRadius * c;
+  static int _secondsToMinutes(dynamic value) {
+    final seconds = _toDouble(value);
+    if (seconds == null) return 0;
+    return (seconds / 60).ceil();
   }
 
-  static double _degreesToRadians(double degrees) {
-    return degrees * (pi / 180);
+  static double? _toDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) {
+      return double.tryParse(value.replaceAll(',', ''));
+    }
+    return null;
   }
+}
+
+class RapidoServiceException implements Exception {
+  RapidoServiceException(this.message, [this.cause]);
+
+  final String message;
+  final Object? cause;
+
+  @override
+  String toString() => cause != null ? '$message (cause: $cause)' : message;
 }
