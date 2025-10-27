@@ -361,7 +361,7 @@ class HomePage extends StatelessWidget {
                 ),
               ],
             ),
-            if (error.isNotEmpty) ...[
+            if (error != null && error.isNotEmpty) ...[
               const SizedBox(height: 12),
               Text(
                 error,

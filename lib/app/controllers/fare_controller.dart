@@ -41,15 +41,8 @@ class FareController extends GetxController {
     fares.clear();
 
     try {
+      // Ensure we have a valid Uber access token
       final accessToken = await uberAuthController.ensureAccessToken();
-      if (accessToken == null) {
-        Get.snackbar(
-          'Uber Sign-In Required',
-          'Please connect your Uber account before fetching live fares.',
-          snackPosition: SnackPosition.BOTTOM,
-        );
-        return;
-      }
 
       final pickupCoords = locationController.getPickupCoordinates();
       final dropCoords = locationController.getDropCoordinates();
